@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `xai/grok-imagine-video-1.5` as a video model on the new `xai-video` runner API; discovered `grok-imagine-video*` rows on xAI are classified as video
+
 ### Fixed
 
 - Fixed DeepSeek V4.1 Flash image attachments being stripped on publisher-namespaced ids such as `ds/deepseek-flash` ([#16470](https://github.com/can1357/oh-my-pi/pull/16470) by [@ZanDev32](https://github.com/ZanDev32))

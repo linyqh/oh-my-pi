@@ -6,6 +6,7 @@ provider "xai" {
 	kind-apis {
 		image "openai-images"
 		tts "xai-tts"
+		video "xai-video"
 	}
 	web-search "xai"
 	// api.x.ai rejects a body over 50 MiB and counts images only against the
@@ -20,6 +21,15 @@ provider "xai" {
 			limits
 			supports-tools #false
 		}
+		// xAI bills generated video per output second and resolution, which
+		// ModelCost cannot represent; poll-reported `cost_in_usd_ticks` is authoritative.
+		model "grok-imagine-video-1.5" name="Grok Imagine Video 1.5" api="xai-video" {
+			reasoning #false
+			input "text" "image"
+			cost input=0 output=0 cache-read=0 cache-write=0
+			limits
+			supports-tools #false
+		}
 	}
 
 	models "grok-imagine-image" {
@@ -27,6 +37,9 @@ provider "xai" {
 	}
 	models "grok-tts" {
 		kind "tts"
+	}
+	models "grok-imagine-video*" {
+		kind "video"
 	}
 
 	// Replaces the provider-keyed prompt-cache session-header baseline.

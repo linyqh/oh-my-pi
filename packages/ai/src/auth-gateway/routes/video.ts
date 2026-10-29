@@ -3,7 +3,7 @@ import { logger } from "@oh-my-pi/pi-utils";
 import type { ResolvedApiKey } from "../../auth-retry";
 import { classifyGatewayError } from "../../error/gateway";
 import * as videoServer from "../../providers/video-server";
-import { downloadVideo, pollVideo, submitVideo } from "../../video";
+import { downloadVideo, isVideoApi, pollVideo, submitVideo } from "../../video";
 import type { VideoJob } from "../../video/types";
 import { deterministicUuid } from "../../utils/deterministic-id";
 import {
@@ -50,7 +50,7 @@ async function resolveVideoJob(
 			`Unknown model: ${identity.provider}/${identity.modelId}`,
 		);
 	}
-	if (model.api !== "openrouter-video") {
+	if (!isVideoApi(model.api)) {
 		return videoServer.formatError(
 			400,
 			"invalid_request_error",
@@ -136,7 +136,7 @@ export async function handleVideoSubmit(
 	}
 	const model = bootOpts.resolveModel(parsed.modelId);
 	if (!model) return videoServer.formatError(404, "invalid_request_error", `Unknown model: ${parsed.modelId}`);
-	if (model.api !== "openrouter-video") {
+	if (!isVideoApi(model.api)) {
 		return videoServer.formatError(
 			400,
 			"invalid_request_error",

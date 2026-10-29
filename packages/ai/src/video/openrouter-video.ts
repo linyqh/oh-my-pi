@@ -1,7 +1,7 @@
-import type { Api, FetchImpl, Model, Usage } from "@oh-my-pi/pi-catalog/types";
+import type { Api, Model, Usage } from "@oh-my-pi/pi-catalog/types";
 import { type } from "@oh-my-pi/omptype";
-import { type ApiKey, withAuth } from "../auth-retry";
 import * as AIError from "../error";
+import { authenticatedVideoFetch, type VideoOptions, videoBaseUrl, videoContent, videoCostUsage } from "./transport";
 import type {
 	VideoAudioReference,
 	VideoContent,
@@ -13,17 +13,6 @@ import type {
 	VideoVideoReference,
 } from "./types";
 
-export interface VideoOptions {
-	apiKey: ApiKey;
-	fetch?: FetchImpl;
-	signal?: AbortSignal;
-}
-
-/** Non-2xx response from an OpenRouter video endpoint. */
-export class VideoApiError extends AIError.ProviderHttpError {
-	override readonly name = "VideoApiError";
-}
-
 const videoJobSchema = type({
 	id: "string > 0",
 	status: "'queued' | 'processing' | 'pending' | 'in_progress' | 'completed' | 'failed' | 'cancelled' | 'expired'",
@@ -33,34 +22,6 @@ const videoJobSchema = type({
 	"error?": "string",
 	"usage?": "object",
 });
-
-function videoBaseUrl(model: Model<Api>): string {
-	return model.baseUrl.replace(/\/+$/, "");
-}
-
-async function responseError(response: Response, model: Model<Api>): Promise<VideoApiError> {
-	const text = await response.text();
-	let detail = text;
-	let code: string | undefined;
-	try {
-		const parsed: unknown = JSON.parse(text);
-		if (parsed && typeof parsed === "object" && "error" in parsed) {
-			const error = parsed.error;
-			if (typeof error === "string") detail = error;
-			else if (error && typeof error === "object") {
-				const envelope = error as { message?: unknown; code?: unknown; type?: unknown };
-				if (typeof envelope.message === "string") detail = envelope.message;
-				if (typeof envelope.code === "string") code = envelope.code;
-				else if (typeof envelope.type === "string") code = envelope.type;
-			}
-		}
-	} catch {}
-	return new VideoApiError(
-		`${model.provider}/${model.id} video API error (${response.status}): ${detail || response.statusText}`,
-		response.status,
-		{ headers: response.headers, code },
-	);
-}
 
 function imageReference(reference: VideoImageReference): Record<string, unknown> {
 	return { type: reference.type, image_url: reference.imageUrl };
@@ -109,15 +70,7 @@ function encodeRequest(model: Model<Api>, request: VideoGenerationRequest): Reco
 function decodeUsage(raw: unknown): Usage | undefined {
 	if (!raw || typeof raw !== "object") return undefined;
 	const cost = "cost" in raw && typeof raw.cost === "number" && Number.isFinite(raw.cost) ? raw.cost : undefined;
-	if (cost === undefined) return undefined;
-	return {
-		input: 0,
-		output: 0,
-		cacheRead: 0,
-		cacheWrite: 0,
-		totalTokens: 0,
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: cost },
-	};
+	return cost === undefined ? undefined : videoCostUsage(cost);
 }
 
 async function decodeJob(response: Response, model: Model<Api>): Promise<VideoJob> {
@@ -141,35 +94,13 @@ async function decodeJob(response: Response, model: Model<Api>): Promise<VideoJo
 	};
 }
 
-async function authenticatedFetch(
-	model: Model<Api>,
-	path: string,
-	options: VideoOptions,
-	init?: Omit<RequestInit, "signal">,
-): Promise<Response> {
-	const fetchImpl = options.fetch ?? fetch;
-	return withAuth(
-		options.apiKey,
-		async key => {
-			const response = await fetchImpl(`${videoBaseUrl(model)}${path}`, {
-				...init,
-				headers: { Authorization: `Bearer ${key}`, Accept: "application/json", ...init?.headers },
-				signal: options.signal,
-			});
-			if (!response.ok) throw await responseError(response, model);
-			return response;
-		},
-		{ signal: options.signal },
-	);
-}
-
 /** Submit an asynchronous OpenRouter video generation job. */
 export async function submitOpenRouterVideo(
 	model: Model<Api>,
 	request: VideoGenerationRequest,
 	options: VideoOptions,
 ): Promise<VideoJob> {
-	const response = await authenticatedFetch(model, "/videos", options, {
+	const response = await authenticatedVideoFetch(model, `${videoBaseUrl(model)}/videos`, options, {
 		method: "POST",
 		headers: { "Content-Type": "application/json" },
 		body: JSON.stringify(encodeRequest(model, request)),
@@ -179,7 +110,11 @@ export async function submitOpenRouterVideo(
 
 /** Poll an asynchronous OpenRouter video generation job. */
 export async function pollOpenRouterVideo(model: Model<Api>, jobId: string, options: VideoOptions): Promise<VideoJob> {
-	const response = await authenticatedFetch(model, `/videos/${encodeURIComponent(jobId)}`, options);
+	const response = await authenticatedVideoFetch(
+		model,
+		`${videoBaseUrl(model)}/videos/${encodeURIComponent(jobId)}`,
+		options,
+	);
 	return decodeJob(response, model);
 }
 
@@ -189,22 +124,11 @@ export async function downloadOpenRouterVideo(
 	jobId: string,
 	options: VideoOptions,
 ): Promise<VideoContent> {
-	const response = await authenticatedFetch(model, `/videos/${encodeURIComponent(jobId)}/content`, options, {
-		headers: { Accept: "video/*" },
-	});
-	if (!response.body) {
-		throw new AIError.ProviderResponseError(`${model.provider}/${model.id} video content response has no body`, {
-			provider: model.provider,
-			kind: "envelope",
-		});
-	}
-	const contentLengthHeader = response.headers.get("content-length");
-	const contentLength = contentLengthHeader === null ? undefined : Number(contentLengthHeader);
-	return {
-		body: response.body,
-		contentType: response.headers.get("content-type") ?? "application/octet-stream",
-		...(contentLength !== undefined && Number.isSafeInteger(contentLength) && contentLength >= 0
-			? { contentLength }
-			: {}),
-	};
+	const response = await authenticatedVideoFetch(
+		model,
+		`${videoBaseUrl(model)}/videos/${encodeURIComponent(jobId)}/content`,
+		options,
+		{ headers: { Accept: "video/*" } },
+	);
+	return videoContent(response, model);
 }

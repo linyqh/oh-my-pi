@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added xAI Grok Imagine video generation (`xai-video` API) to `@oh-my-pi/pi-ai/video` and the auth-gateway `/v1/videos` routes, usable against `api.x.ai` or any xAI-compatible relay base URL
+
 ### Fixed
 
 - Fixed a cancelled request whose OAuth credential was mid-refresh killing the whole session with `[Unhandled Rejection] AbortError: OAuth refresh ownership aborted by caller` ([#17290](https://github.com/can1357/oh-my-pi/pull/17290) by [@H4vC](https://github.com/H4vC))

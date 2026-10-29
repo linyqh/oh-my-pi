@@ -205,6 +205,18 @@ providers:
 
 A configured `kind`, explicit or implied by a runner API, outranks the bundled catalog's classification of the same id and survives `modelOverrides` and refreshes.
 
+`xai-video` drives xAI's asynchronous video jobs (`POST {baseUrl}/videos/generations`, then `GET {baseUrl}/videos/{request_id}`). The built-in `xai/grok-imagine-video-1.5` uses `https://api.x.ai/v1` with `XAI_API_KEY`; an xAI-compatible relay works by declaring the model under its own provider. A relay that answers a path-relative `video.url` is fetched on its own origin with the provider key; a content URL on any other origin (xAI's presigned CDN) is fetched without credentials.
+
+```yaml
+providers:
+  my-relay:
+    baseUrl: https://relay.example.com/v1
+    apiKey: MY_RELAY_API_KEY
+    models:
+      - id: grok-imagine-video-1.5
+        api: xai-video # kind: video, served by the auth-gateway's /v1/videos routes
+```
+
 Loading models.yml checks a `modelOverrides` `kind` only against an api the file names: the override's own `api`, or that of a `models` entry with the same id. A built-in or discovered model gets its api later, so its override `kind` is checked against that api when the override applies; a kind the api does not serve is ignored and logged. An `api` override without `kind` takes a runner API's kind, keeps a kind the new api still serves, and otherwise makes the model `chat`. A `models` entry that redefines a built-in id on a different api follows the same rule, so redefining an image row on `openai-completions` makes it `chat`.
 
 ### Allowed auth/discovery values

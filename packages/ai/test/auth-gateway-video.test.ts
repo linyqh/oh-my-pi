@@ -26,13 +26,19 @@ interface Harness {
 	dir: string;
 }
 
-function model(id: string, api: Api = "openrouter-video", kind: "video" | undefined = "video"): Model<Api> {
+function model(
+	id: string,
+	api: Api = "openrouter-video",
+	kind: "video" | undefined = "video",
+	provider = "openrouter",
+	baseUrl = "https://openrouter.ai/api/v1",
+): Model<Api> {
 	return buildModel({
 		id,
 		name: id,
 		api,
-		provider: "openrouter",
-		baseUrl: "https://openrouter.ai/api/v1",
+		provider,
+		baseUrl,
 		reasoning: false,
 		input: ["text", "image"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -46,8 +52,10 @@ async function boot(): Promise<Harness> {
 	const dir = await fs.mkdtemp(path.join(os.tmpdir(), "gw-video-"));
 	const storage = await AuthStorage.create(path.join(dir, "auth.db"));
 	storage.keys.setRuntime("openrouter", "openrouter-secret");
+	storage.keys.setRuntime("xai", "xai-secret");
 	const video = model("google/veo-3.1");
 	const wrongApi = model("openrouter/auto", "openrouter", undefined);
+	const xaiVideo = model("grok-imagine-video-1.5", "xai-video", "video", "xai", "https://api.x.ai/v1");
 	const upstream: UpstreamRequest[] = [];
 	const fetchImpl: FetchImpl = async (input, init) => {
 		const url = String(input);
@@ -59,6 +67,9 @@ async function boot(): Promise<Harness> {
 			authorization: new Headers(init?.headers).get("authorization"),
 			...(body !== undefined && { body }),
 		});
+		if (url === "https://api.x.ai/v1/videos/generations" && method === "POST") {
+			return Response.json({ request_id: "xai-request-789" });
+		}
 		if (url.endsWith("/videos") && method === "POST") {
 			return Response.json(
 				{
@@ -93,6 +104,7 @@ async function boot(): Promise<Harness> {
 		resolveModel: id => {
 			if (id === video.id || id === `openrouter/${video.id}`) return video;
 			if (id === wrongApi.id || id === `openrouter/${wrongApi.id}`) return wrongApi;
+			if (id === `xai/${xaiVideo.id}`) return xaiVideo;
 			return undefined;
 		},
 		version: "test",
@@ -241,6 +253,30 @@ describe("auth-gateway asynchronous video generation", () => {
 		});
 		expect(unknown.status).toBe(404);
 		expect(harness.upstream).toHaveLength(0);
+	});
+
+	it("routes xai-video models through the xAI generations wire", async () => {
+		harness = await boot();
+		const response = await fetch(`${harness.url}/v1/videos`, {
+			method: "POST",
+			headers: gatewayHeaders(),
+			body: JSON.stringify({ model: "xai/grok-imagine-video-1.5", prompt: "A lighthouse", duration: 4 }),
+		});
+		expect(response.status).toBe(202);
+		const body = (await response.json()) as Record<string, unknown>;
+		expect(decodeGatewayJobId(body.id as string)).toEqual({
+			provider: "xai",
+			modelId: "grok-imagine-video-1.5",
+			upstreamId: "xai-request-789",
+		});
+		expect(harness.upstream).toEqual([
+			{
+				url: "https://api.x.ai/v1/videos/generations",
+				method: "POST",
+				authorization: "Bearer xai-secret",
+				body: { model: "grok-imagine-video-1.5", prompt: "A lighthouse", duration: 4 },
+			},
+		]);
 	});
 
 	it("rejects models on the wrong API", async () => {

@@ -60,6 +60,7 @@ export const RUNNER_APIS = [
 	"openai-embeddings",
 	"openrouter-rerank",
 	"openrouter-video",
+	"xai-video",
 	"openai-transcriptions",
 ] as const;
 /** Kind each single-purpose runner API serves; `local-inference` hosts several kinds. */
@@ -76,6 +77,7 @@ export const RUNNER_API_KINDS: Record<Exclude<(typeof RUNNER_APIS)[number], "loc
 	"openai-embeddings": "embedding",
 	"openrouter-rerank": "rerank",
 	"openrouter-video": "video",
+	"xai-video": "video",
 	"openai-transcriptions": "stt",
 };
 
